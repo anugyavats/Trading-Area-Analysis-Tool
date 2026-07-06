@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Area Analysis Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark"><img src="hpcl-logo.png" alt="HPCL Logo"><span class="dot"></span>Trading Area Analysis Tool</div>
+    <div class="sub">HPCL Retail Sales</div>
+  </div>
+  <div class="filter-wrap">
+    <label for="saSelect" class="filter-label">Sales Area</label>
+    <select id="saSelect"></select>
+  </div>
+  <div class="search-wrap">
+    <input id="searchInput" type="text" placeholder="Search by dealership name, trading area, or location…" autocomplete="off">
+    <div class="dropdown" id="dropdown"></div>
+  </div>
+</div>
+
+<div class="shell">
+
+  <div class="empty-state" id="emptyState">
+    <div class="glyph">◎ ◎ ◎</div>
+    <h2>Search for a dealership to begin</h2>
+    <p>Pick a Sales Area above, then look up a retail outlet by name to see how it compares with other dealers in the same trading area.</p>
+  </div>
+
+  <div class="app-grid" id="appGrid">
+    <!-- Profile card -->
+    <div class="profile-card" id="profileCard"></div>
+
+    <!-- Main panel -->
+    <div class="panel">
+      <div id="peerContent" style="padding:22px 24px 28px;"></div>
+    </div>
+  </div>
+
+  <footer class="credits">© 2026 <strong>Anugya Vats</strong></footer>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
