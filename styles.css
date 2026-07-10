@@ -103,7 +103,7 @@
     outline:none;
   }
   .search-wrap input::placeholder{color:#0922e6;}
-  .search-wrap input:focus{border-color:rgb(148, 155, 184)mber);}
+  .search-wrap input:focus{border-color:rgb(148, 155, 184)mber;}
   .dropdown{
     position:absolute;
     top:calc(100% + 6px);

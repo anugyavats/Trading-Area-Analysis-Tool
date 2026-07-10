@@ -144,7 +144,7 @@ async function init(){
   saSelect.innerHTML = SA_LIST.map(sa=>`<option value="${esc(sa)}" ${sa===selectedSA?'selected':''}>${esc(sa)}</option>`).join('');
   saSelect.disabled = false;
   searchInput.disabled = false;
-  searchInput.placeholder = 'Search by dealership name, trading area, or location…';
+  searchInput.placeholder = 'Search by RO name, Trading Area, or Location';
 
   wireEvents();
 }
@@ -204,7 +204,6 @@ function renderProfile(){
       <div class="meta-item"><div class="ml">Major NH</div><div class="mv">${esc(d.nh)||'—'}</div></div>
       <div class="meta-item"><div class="ml">Dealer Code</div><div class="mv">${esc(d.cn)||'—'}</div></div>
     </div>
-    <div class="meta-note">${tArea ? 'Peer comparison below is scoped to dealers sharing this exact trading area.' : 'This dealer has no trading area mapped in the source workbook, so a trading-area peer comparison isn’t available. Trading areas are populated almost exclusively for the Sangli sales area.'}</div>
   `;
 }
 
