@@ -49,7 +49,7 @@ function fuelPct(d, cumulative){
 // IO = IndianOil (orange), BP = Bharat Petroleum (yellow), HP = HPCL (blue).
 // The selected dealer is always drawn in brand red so it stands apart.
 const OMC_COLORS = { IO:'#F26722', BP:'#F5C400', HP:'#0072BC' };
-const OMC_NAMES  = { IO:'IndianOil', BP:'Bharat Petroleum', HP:'HPCL' };
+const OMC_NAMES  = { IO:'IOCL', BP:'BPCL', HP:'HPCL' };
 const SELECTED_COLOR = '#E31E24';
 function omcColor(omc){ return OMC_COLORS[omc] || '#8A99A8'; }
 // Legend entries for the OMCs actually present in a set of dealers (+ selected).
