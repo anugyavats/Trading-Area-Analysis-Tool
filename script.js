@@ -15,6 +15,51 @@ let selectedSA = null;
 let current = null;
 let peerSortCol = 'msC', peerSortDir = -1;
 let subGroupField = 'none';
+let fuelType = 'ms'; // 'ms' | 'hsd' | 'both'
+
+// ---------- fuel-type accessors ----------
+// The fuel filter (MS / HSD / MS+HSD) drives every fuel-specific view. These
+// helpers translate the current fuelType into the right record fields so the
+// rest of the code never hard-codes msC/hsdC etc.
+const FUEL = {
+  ms:   { label:'MS',     c:'msC',  h:'msH',  cumC:'msCumC',  cumH:'msCumH'  },
+  hsd:  { label:'HSD',    c:'hsdC', h:'hsdH', cumC:'hsdCumC', cumH:'hsdCumH' },
+  both: { label:'MS+HSD' },
+};
+function fuelLabel(){ return FUEL[fuelType].label; }
+// which ∈ 'c' | 'h' | 'cumC' | 'cumH'
+function fuelVal(d, which){
+  if(fuelType === 'both'){
+    const a = d[FUEL.ms[which]], b = d[FUEL.hsd[which]];
+    if((a===null||a===undefined) && (b===null||b===undefined)) return null;
+    return (a||0) + (b||0);
+  }
+  const v = d[FUEL[fuelType][which]];
+  return (v===null||v===undefined) ? null : v;
+}
+// YoY growth derived uniformly from current vs historical (handles combined + h=0)
+function fuelPct(d, cumulative){
+  const c = fuelVal(d, cumulative ? 'cumC' : 'c');
+  const h = fuelVal(d, cumulative ? 'cumH' : 'h');
+  if(c===null || h===null || h===0) return null;
+  return ((c - h) / h) * 100;
+}
+
+// ---------- OMC brand colours (from each oil company's logo) ----------
+// IO = IndianOil (orange), BP = Bharat Petroleum (yellow), HP = HPCL (blue).
+// The selected dealer is always drawn in brand red so it stands apart.
+const OMC_COLORS = { IO:'#F26722', BP:'#F5C400', HP:'#0072BC' };
+const OMC_NAMES  = { IO:'IndianOil', BP:'Bharat Petroleum', HP:'HPCL' };
+const SELECTED_COLOR = '#E31E24';
+function omcColor(omc){ return OMC_COLORS[omc] || '#8A99A8'; }
+// Legend entries for the OMCs actually present in a set of dealers (+ selected).
+function omcLegend(dealers){
+  const present = [...new Set(dealers.map(x=>x.omc).filter(Boolean))]
+    .filter(o=>OMC_COLORS[o]);
+  const entries = present.map(o=>({color:OMC_COLORS[o], label:OMC_NAMES[o]||o}));
+  entries.push({color:SELECTED_COLOR, label:'Selected dealer'});
+  return entries;
+}
 
 // ---------- dependency-free SVG bar chart helpers ----------
 function escXml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -23,7 +68,7 @@ function escXml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').
 function renderBarChart(containerId, opts){
   const el = document.getElementById(containerId);
   if(!el) return;
-  const { labels, values, colors, unitLabel, title } = opts;
+  const { labels, values, colors, unitLabel, title, legend } = opts;
   const n = values.length;
   const barW = 30, gap = 18, leftPad = 60, topPad = 26, bottomPad = 95;
   const chartH = 190;
@@ -43,13 +88,182 @@ function renderBarChart(containerId, opts){
     bars += `<text class="bar-value-label" x="${x+barW/2}" y="${y-6}" text-anchor="middle">${fmt(v,0)}</text>`;
     const lblY = topPad + chartH + 12;
     const lblX = x + barW/2;
+    const isSelf = labels[i].startsWith('★');
     const label = labels[i].length > 16 ? labels[i].slice(0,15)+'…' : labels[i];
-    bars += `<text class="bar-axis-label" x="0" y="0" text-anchor="end" transform="translate(${lblX},${lblY}) rotate(-25)">${escXml(label)}</text>`;
+    bars += `<text class="bar-axis-label${isSelf?' bar-axis-self':''}" x="0" y="0" text-anchor="end" transform="translate(${lblX},${lblY}) rotate(-25)">${escXml(label)}</text>`;
   }
   const baseline = `<line x1="${leftPad}" y1="${topPad+chartH}" x2="${w-leftPad}" y2="${topPad+chartH}" stroke="#DAD4C2" stroke-width="1"></line>`;
 
   el.innerHTML = `
     ${title ? `<div class="chart-title">${escXml(title)}</div>` : ''}
+    ${legend ? `<div class="chart-legend">${legend.map(l=>`<span><span class="swatch" style="background:${l.color}"></span>${escXml(l.label)}</span>`).join('')}</div>` : ''}
+    <div class="svg-chart-scroll">
+      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+        ${baseline}
+        ${bars}
+      </svg>
+    </div>`;
+}
+
+// Diverging vertical bar chart with a zero baseline — bars go up for positive
+// values (green) and down for negative (red). Used for the growth leaderboard.
+function renderGrowthChart(containerId, opts){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const { labels, values, selfIdx, title } = opts;
+  const n = values.length;
+  const barW = 30, gap = 18, leftPad = 60, topPad = 22, bottomPad = 95;
+  const half = 90; // px available above/below the zero line
+  const w = Math.max(leftPad*2 + n*(barW+gap), 900);
+  const h = topPad + half*2 + bottomPad;
+  const zeroY = topPad + half;
+  const maxAbs = Math.max(1, ...values.map(v=>Math.abs(v||0)));
+  const niceMax = maxAbs * 1.15;
+
+  let bars = '';
+  for(let i=0;i<n;i++){
+    const v = values[i] || 0;
+    const x = leftPad + gap + i*(barW+gap);
+    const barH = niceMax>0 ? (half * (Math.abs(v)/niceMax)) : 0;
+    const y = v>=0 ? zeroY - barH : zeroY;
+    const isSelf = i===selfIdx;
+    const color = v>=0 ? '#1F9D55' : '#E31E24';
+    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(barH,1)}" rx="3" fill="${color}" ${isSelf?'stroke="#1B2A41" stroke-width="2"':''}></rect>`;
+    const vLblY = v>=0 ? y-6 : y+barH+13;
+    bars += `<text class="bar-value-label" x="${x+barW/2}" y="${vLblY}" text-anchor="middle">${fmtPct(v)}</text>`;
+    const lblY = topPad + half*2 + 12;
+    const lblX = x + barW/2;
+    let label = labels[i].length > 16 ? labels[i].slice(0,15)+'…' : labels[i];
+    if(isSelf) label = '★ ' + label;
+    bars += `<text class="bar-axis-label${isSelf?' bar-axis-self':''}" x="0" y="0" text-anchor="end" transform="translate(${lblX},${lblY}) rotate(-25)">${escXml(label)}</text>`;
+  }
+  const baseline = `<line x1="${leftPad}" y1="${zeroY}" x2="${w-leftPad}" y2="${zeroY}" stroke="#8A99A8" stroke-width="1"></line>`;
+
+  el.innerHTML = `
+    ${title ? `<div class="chart-title">${escXml(title)}</div>` : ''}
+    <div class="svg-chart-scroll">
+      <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+        ${baseline}
+        ${bars}
+      </svg>
+    </div>`;
+}
+
+// Paired "Current vs Historical" mini panels — each panel is independently
+// scaled so monthly figures aren't dwarfed by the much larger cumulative ones.
+function renderComparePanels(containerId, opts){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const { panels, curColor='#0054A6', histColor='#E31E24' } = opts;
+  function panelSvg(cur, hist){
+    const W=220, H=190, barW=54, gap=44;
+    const leftPad=(W-(barW*2+gap))/2, topPad=24, plotH=120;
+    const baseY=topPad+plotH;
+    const niceMax=Math.max(1, cur||0, hist||0)*1.22;
+    const bar=(v,i,color,name)=>{
+      const x=leftPad+i*(barW+gap);
+      const bh=plotH*((v||0)/niceMax);
+      const y=baseY-bh;
+      return `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(bh,1)}" rx="4" fill="${color}"></rect>`
+        +`<text class="bar-value-label" x="${x+barW/2}" y="${y-6}" text-anchor="middle">${fmt(v,0)}</text>`
+        +`<text class="cmp-axis" x="${x+barW/2}" y="${baseY+16}" text-anchor="middle">${name}</text>`;
+    };
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`
+      +`<line x1="${leftPad-12}" y1="${baseY}" x2="${W-leftPad+12}" y2="${baseY}" stroke="#DAD4C2"></line>`
+      +bar(cur,0,curColor,'Current')+bar(hist,1,histColor,'Last yr')
+      +`</svg>`;
+  }
+  el.innerHTML = `
+    <div class="chart-legend"><span><span class="swatch" style="background:${curColor}"></span>Current</span><span><span class="swatch" style="background:${histColor}"></span>Historical (last year)</span></div>
+    <div class="cmp-row">
+      ${panels.map(p=>`<div class="cmp-panel">
+        <div class="cmp-title">${escXml(p.label)}${p.pct!==null&&p.pct!==undefined?` <span class="cmp-pct ${pctClass(p.pct)}">${fmtPct(p.pct)}</span>`:''}</div>
+        ${panelSvg(p.cur, p.hist)}
+      </div>`).join('')}
+    </div>`;
+}
+
+// Donut — selected dealer's share of the trading-area total for the chosen fuel.
+function renderDonut(containerId, opts){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const { value, total, label, contributors } = opts;
+  const share = (total>0 && value!==null) ? (value/total)*100 : 0;
+  const R = 70, cx = 90, cy = 90, sw = 26;
+  const circ = 2 * Math.PI * R;
+  const dash = (share/100) * circ;
+  const ring = `
+    <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#0054A6" stroke-width="${sw}" opacity="0.18"></circle>
+    <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="#E31E24" stroke-width="${sw}"
+      stroke-dasharray="${dash} ${circ-dash}" stroke-dashoffset="${circ*0.25}" stroke-linecap="round"
+      transform="rotate(-90 ${cx} ${cy})"></circle>
+    <text class="donut-pct" x="${cx}" y="${cy-2}" text-anchor="middle">${share.toFixed(1)}%</text>
+    <text class="donut-sub" x="${cx}" y="${cy+16}" text-anchor="middle">of area</text>`;
+  const contribHtml = (contributors && contributors.length) ? `
+    <div class="contrib">
+      <div class="contrib-head">Top 8 outlets in this area</div>
+      ${contributors.map(c=>`
+        ${c.gap?'<div class="contrib-gap">⋯</div>':''}
+        <div class="contrib-row${c.self?' contrib-self':''}">
+          <span class="contrib-rank">#${c.rank}</span>
+          <span class="contrib-dot" style="background:${c.self?SELECTED_COLOR:omcColor(c.omc)}"></span>
+          <span class="contrib-name" data-cid="${c.id}" title="View ${escXml(c.name)}">${escXml(c.name)}</span>
+          <span class="contrib-val">${fmt(c.val,0)} KL</span>
+          <span class="contrib-share">${c.share.toFixed(1)}%</span>
+        </div>`).join('')}
+    </div>` : '';
+  el.innerHTML = `
+    ${label ? `<div class="chart-title">${escXml(label)}</div>` : ''}
+    <div class="donut-row">
+      <svg width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">${ring}</svg>
+      <div class="donut-legend">
+        <div><span class="swatch" style="background:#E31E24"></span>This dealer — ${fmt(value)} KL</div>
+        <div><span class="swatch" style="background:#0054A6;opacity:0.35"></span>Rest of area — ${fmt(total-(value||0))} KL</div>
+        <div class="donut-total">Area total: <strong>${fmt(total)} KL</strong></div>
+      </div>
+    </div>
+    ${contribHtml}`;
+}
+
+// Stacked bar — MS (navy) + HSD (red) per peer, to reveal product mix.
+function renderStackedBar(containerId, opts){
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  const { labels, msVals, hsdVals, selfIdx, title } = opts;
+  const n = labels.length;
+  const barW = 30, gap = 18, leftPad = 60, topPad = 26, bottomPad = 95;
+  const chartH = 190;
+  const w = Math.max(leftPad*2 + n*(barW+gap), 900);
+  const h = topPad + chartH + bottomPad;
+  const totals = msVals.map((v,i)=>(v||0)+(hsdVals[i]||0));
+  const maxV = Math.max(1, ...totals);
+  const niceMax = maxV * 1.18;
+
+  let bars = '';
+  for(let i=0;i<n;i++){
+    const ms = msVals[i]||0, hsd = hsdVals[i]||0, tot = ms+hsd;
+    const x = leftPad + gap + i*(barW+gap);
+    const msH = chartH * (ms/niceMax);
+    const hsdH = chartH * (hsd/niceMax);
+    const msY = topPad + (chartH - msH);
+    const hsdY = msY - hsdH;
+    const isSelf = i===selfIdx;
+    const stroke = isSelf ? 'stroke="#1B2A41" stroke-width="2"' : '';
+    bars += `<rect x="${x}" y="${msY}" width="${barW}" height="${Math.max(msH,0.5)}" fill="#0054A6" ${stroke}></rect>`;
+    bars += `<rect x="${x}" y="${hsdY}" width="${barW}" height="${Math.max(hsdH,0.5)}" fill="#E31E24" ${stroke}></rect>`;
+    const msShare = tot>0 ? Math.round(ms/tot*100) : 0;
+    bars += `<text class="bar-value-label" x="${x+barW/2}" y="${hsdY-5}" text-anchor="middle">${msShare}/${100-msShare}</text>`;
+    const lblY = topPad + chartH + 12;
+    const lblX = x + barW/2;
+    let label = labels[i].length > 16 ? labels[i].slice(0,15)+'…' : labels[i];
+    if(isSelf) label = '★ ' + label;
+    bars += `<text class="bar-axis-label${isSelf?' bar-axis-self':''}" x="0" y="0" text-anchor="end" transform="translate(${lblX},${lblY}) rotate(-25)">${escXml(label)}</text>`;
+  }
+  const baseline = `<line x1="${leftPad}" y1="${topPad+chartH}" x2="${w-leftPad}" y2="${topPad+chartH}" stroke="#DAD4C2" stroke-width="1"></line>`;
+
+  el.innerHTML = `
+    ${title ? `<div class="chart-title">${escXml(title)}</div>` : ''}
+    <div class="chart-legend"><span><span class="swatch" style="background:#0054A6"></span>MS</span><span><span class="swatch" style="background:#E31E24"></span>HSD</span><span>(labels = MS/HSD % split)</span></div>
     <div class="svg-chart-scroll">
       <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
         ${baseline}
@@ -155,6 +369,7 @@ function selectDealer(d){
   current = d;
   peerSortCol = 'msC'; peerSortDir = -1;
   subGroupField = 'none';
+  fuelType = 'ms';
   searchInput.value = d.name;
   document.getElementById('emptyState').style.display='none';
   document.getElementById('appGrid').classList.add('open');
@@ -167,6 +382,12 @@ function renderProfile(){
   const d = current;
   const card = document.getElementById('profileCard');
   const tArea = d.tarea ? d.tarea : null;
+  // Combined MS+HSD totals + derived YoY growth
+  const sum = (a,b) => (a===null||a===undefined) && (b===null||b===undefined) ? null : (a||0)+(b||0);
+  const grow = (c,h) => (c===null||h===null||h===0) ? null : ((c-h)/h)*100;
+  const combC = sum(d.msC, d.hsdC),       combH = sum(d.msH, d.hsdH);
+  const combCumC = sum(d.msCumC, d.hsdCumC), combCumH = sum(d.msCumH, d.hsdCumH);
+  const combPct = grow(combC, combH), combCumPct = grow(combCumC, combCumH);
   card.innerHTML = `
     <div class="pname">${esc(d.name)}</div>
     <div class="ploc">${esc(titleCase(d.location))||'Location n/a'} · ${esc(d.dist)}</div>
@@ -197,6 +418,16 @@ function renderProfile(){
         <div class="odo-val">${fmt(d.hsdCumC)}<small>KL</small></div>
         <div class="odo-delta ${pctClass(d.hsdCumPct)==='pos'?'delta-pos':'delta-neg'}">${fmtPct(d.hsdCumPct)} vs last year</div>
       </div>
+      <div class="odo odo-combined">
+        <div class="odo-label">MS+HSD this month</div>
+        <div class="odo-val">${fmt(combC)}<small>KL</small></div>
+        <div class="odo-delta ${pctClass(combPct)==='pos'?'delta-pos':'delta-neg'}">${fmtPct(combPct)} vs last year</div>
+      </div>
+      <div class="odo odo-combined">
+        <div class="odo-label">MS+HSD cumulative FY</div>
+        <div class="odo-val">${fmt(combCumC)}<small>KL</small></div>
+        <div class="odo-delta ${pctClass(combCumPct)==='pos'?'delta-pos':'delta-neg'}">${fmtPct(combCumPct)} vs last year</div>
+      </div>
     </div>
     <div class="profile-meta">
       <div class="meta-item"><div class="ml">Trading Area</div><div class="mv">${esc(tArea)||'Not mapped'}</div></div>
@@ -211,31 +442,16 @@ function renderProfile(){
 function renderHistorical(d){
  const el=document.getElementById('historicalPanel');
  if(!el) return;
+ const lbl = fuelLabel();
+ el.classList.add('chart-wrap');
  el.innerHTML=`
- <div class="section-head"><div><h3>Historical Comparison</h3><div class="sd">Current vs Historical (same period)</div></div></div>
- <div class="stat-strip">
-   <div class="stat-box"><div class="sl">MS</div><div class="sv">${fmt(d.msC)} <span class="unit">| ${fmt(d.msH)}</span></div></div>
-   <div class="stat-box"><div class="sl">HSD</div><div class="sv">${fmt(d.hsdC)} <span class="unit">| ${fmt(d.hsdH)}</span></div></div>
-   <div class="stat-box"><div class="sl">MS Cum</div><div class="sv">${fmt(d.msCumC)} <span class="unit">| ${fmt(d.msCumH)}</span></div></div>
-   <div class="stat-box"><div class="sl">HSD Cum</div><div class="sv">${fmt(d.hsdCumC)} <span class="unit">| ${fmt(d.hsdCumH)}</span></div></div>
- </div>
- <div class="two-col">
-   <div class="chart-wrap"><div id="histMS"></div></div>
-   <div class="chart-wrap"><div id="histHSD"></div></div>
- </div>`;
- renderBarChart('histMS',{
-   labels:['Current','Historical'],
-   values:[d.msC||0,d.msH||0],
-   colors:['#0054A6','#E31E24'],
-   unitLabel:'KL',
-   title:'MS Current vs Historical'
- });
- renderBarChart('histHSD',{
-   labels:['Current','Historical'],
-   values:[d.hsdC||0,d.hsdH||0],
-   colors:['#0054A6','#E31E24'],
-   unitLabel:'KL',
-   title:'HSD Current vs Historical'
+ <div class="chart-title">${lbl} — Current vs Historical (same period last year)</div>
+ <div id="histChart"></div>`;
+ renderComparePanels('histChart',{
+   panels:[
+     {label:'This Month',     cur:fuelVal(d,'c'),    hist:fuelVal(d,'h'),    pct:fuelPct(d,false)},
+     {label:'Cumulative FY',  cur:fuelVal(d,'cumC'), hist:fuelVal(d,'cumH'), pct:fuelPct(d,true)},
+   ]
  });
 }
 
@@ -265,6 +481,11 @@ function renderPeerSection(){
     {k:'mclass', l:'Market Class'},
     {k:'urh', l:'Road Type'},
   ];
+  const fuels = [
+    {k:'ms', l:'MS'},
+    {k:'hsd', l:'HSD'},
+    {k:'both', l:'MS+HSD'},
+  ];
 
   container.innerHTML = `
     <div class="section-head">
@@ -272,11 +493,21 @@ function renderPeerSection(){
         <h3>Trading Area: ${esc(d.tarea)}</h3>
         <div class="sd">Comparing <strong>${esc(d.name)}</strong> against ${group.length} dealer${group.length===1?'':'s'} sharing this trading area in ${esc(d.sa)}.</div>
       </div>
+      <div>
+        <div class="filter-label" style="color:var(--ink-faint);margin-bottom:4px;">Fuel</div>
+        <div class="group-toggle">${fuels.map(f=>`<button class="chip ${f.k===fuelType?'active':''}" data-fuel="${f.k}">${f.l}</button>`).join('')}</div>
+      </div>
     </div>
     <div id="peerStats"></div>
-<div id="historicalPanel"></div>
-    <div class="chart-wrap"><div id="peerChartMS"></div></div>
-    <div class="chart-wrap"><div id="peerChartHSD"></div></div>
+
+    <div class="two-col tc-top">
+      <div class="chart-wrap"><div id="shareDonut"></div></div>
+      <div id="historicalPanel"></div>
+    </div>
+
+    <div class="chart-wrap"><div id="peerChartVol"></div></div>
+    <div class="chart-wrap"><div id="growthChart"></div></div>
+    <div class="chart-wrap"><div id="mixChart"></div></div>
 
     <div class="section-head" style="margin-top:8px;">
       <div>
@@ -291,6 +522,13 @@ function renderPeerSection(){
     <div class="table-scroll"><table class="dtable" id="peerTable"></table></div>
   `;
 
+  container.querySelectorAll('[data-fuel]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      fuelType = chip.dataset.fuel;
+      renderPeerSection();
+    });
+  });
+
   container.querySelectorAll('[data-sf]').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       subGroupField = chip.dataset.sf;
@@ -300,6 +538,7 @@ function renderPeerSection(){
 
   renderHistorical(d);
   drawPeerStatsAndCharts(group);
+  drawAnalyticsCharts(group);
   drawPeerTable(group);
   drawSubGroup(group);
 }
@@ -307,48 +546,117 @@ function renderPeerSection(){
 function drawPeerStatsAndCharts(group){
   const d = current;
   const n = group.length;
+  const lbl = fuelLabel();
   const rankOf = (arr, val) => {
     if(val===null||val===undefined) return null;
     const sorted = [...arr].filter(v=>v!==null&&v!==undefined).sort((a,b)=>b-a);
     return sorted.indexOf(val)+1;
   };
-  const msVals = group.map(x=>x.msC);
-  const hsdVals = group.map(x=>x.hsdC);
-  const msRank = rankOf(msVals, d.msC);
-  const hsdRank = rankOf(hsdVals, d.hsdC);
-  const msValid = msVals.filter(v=>v!==null&&v!==undefined).length;
-  const hsdValid = hsdVals.filter(v=>v!==null&&v!==undefined).length;
-  const avgMs = msValid? (msVals.filter(v=>v!==null).reduce((a,b)=>a+b,0)/msValid) : null;
-  const avgHsd = hsdValid? (hsdVals.filter(v=>v!==null).reduce((a,b)=>a+b,0)/hsdValid) : null;
+  const vals = group.map(x=>fuelVal(x,'c'));
+  const valid = vals.filter(v=>v!==null&&v!==undefined);
+  const nValid = valid.length;
+  const myVal = fuelVal(d,'c');
+  const rank = rankOf(vals, myVal);
+  const avg = nValid ? valid.reduce((a,b)=>a+b,0)/nValid : null;
+  const total = valid.reduce((a,b)=>a+b,0);
+  const share = (total>0 && myVal!==null) ? (myVal/total)*100 : null;
+  const growth = fuelPct(d, false);
+  const vsAvg = (avg!==null && myVal!==null) ? myVal-avg : null;
 
   document.getElementById('peerStats').innerHTML = `
-    <div class="stat-strip">
+    <div class="stat-strip stat-strip-5">
       <div class="stat-box"><div class="sl">Peer group size</div><div class="sv">${n} <span class="unit">dealers</span></div></div>
-      <div class="stat-box"><div class="sl">MS rank</div><div class="sv">${msRank?('#'+msRank):'—'} <span class="unit">of ${msValid}</span></div></div>
-      <div class="stat-box"><div class="sl">HSD rank</div><div class="sv">${hsdRank?('#'+hsdRank):'—'} <span class="unit">of ${hsdValid}</span></div></div>
-      <div class="stat-box"><div class="sl">vs group average</div><div class="sv ${d.msC>avgMs?'pos':'neg'}">${avgMs? (d.msC>=avgMs?'+':'')+fmt(d.msC-avgMs):'—'} <span class="unit">KL MS</span></div></div>
+      <div class="stat-box"><div class="sl">${lbl} rank</div><div class="sv">${rank?('#'+rank):'—'} <span class="unit">of ${nValid}</span></div></div>
+      <div class="stat-box"><div class="sl">vs group avg</div><div class="sv ${vsAvg>=0?'pos':'neg'}">${vsAvg!==null?((vsAvg>=0?'+':'')+fmt(vsAvg)):'—'} <span class="unit">KL ${lbl}</span></div></div>
+      <div class="stat-box"><div class="sl">Area share</div><div class="sv">${share!==null?share.toFixed(1)+'%':'—'} <span class="unit">of ${lbl}</span></div></div>
+      <div class="stat-box"><div class="sl">${lbl} YoY growth</div><div class="sv ${pctClass(growth)}">${fmtPct(growth)}</div></div>
     </div>
   `;
 
-  // charts: sort group by msC desc, cap to 30 for readability, always include current
-  function chartFor(containerId, key, unitLabel){
-    const sorted = [...group].sort((a,b)=>(b[key]??-1)-(a[key]??-1));
-    let shown = sorted;
-    if(sorted.length>30){
-      const idx = sorted.findIndex(x=>x.id===d.id);
-      const start = Math.max(0, Math.min(idx-10, sorted.length-30));
-      shown = sorted.slice(start, start+30);
-    }
-    const labels = shown.map(x=> x.id===d.id ? '★ '+x.name : x.name);
-    const values = shown.map(x=>x[key]);
-    const colors = shown.map(x=> x.id===d.id ? '#E31E24' : '#0054A6');
-    renderBarChart(containerId, {
-      labels, values, colors, unitLabel,
-      title: unitLabel + ' — current month (★ = selected dealer)'
-    });
+  // Peer volume chart for the selected fuel: sort desc, cap to 30, keep selected in view
+  const sorted = [...group].sort((a,b)=>(fuelVal(b,'c')??-1)-(fuelVal(a,'c')??-1));
+  let shown = sorted;
+  if(sorted.length>30){
+    const idx = sorted.findIndex(x=>x.id===d.id);
+    const start = Math.max(0, Math.min(idx-10, sorted.length-30));
+    shown = sorted.slice(start, start+30);
   }
-  chartFor('peerChartMS','msC','MS volume (KL)');
-  chartFor('peerChartHSD','hsdC','HSD volume (KL)');
+  renderBarChart('peerChartVol', {
+    labels: shown.map(x=> x.id===d.id ? '★ '+x.name : x.name),
+    values: shown.map(x=>fuelVal(x,'c')),
+    colors: shown.map(x=> x.id===d.id ? SELECTED_COLOR : omcColor(x.omc)),
+    unitLabel: lbl+' volume (KL)',
+    title: lbl+' volume — current month (bars coloured by oil company)',
+    legend: omcLegend(shown)
+  });
+}
+
+// Growth leaderboard + performance quadrant + fuel-mix, all fuel-aware.
+function drawAnalyticsCharts(group){
+  const d = current;
+  const lbl = fuelLabel();
+
+  // ---- Market-share donut + top contributors (selected fuel) ----
+  const vals = group.map(x=>fuelVal(x,'c')).filter(v=>v!==null&&v!==undefined);
+  const total = vals.reduce((a,b)=>a+b,0);
+  const ranked = [...group]
+    .filter(x=>fuelVal(x,'c')!==null)
+    .sort((a,b)=>fuelVal(b,'c')-fuelVal(a,'c'))
+    .map((x,i)=>({ rank:i+1, id:x.id, name:x.name, omc:x.omc, val:fuelVal(x,'c'),
+                   share: total>0 ? fuelVal(x,'c')/total*100 : 0, self:x.id===d.id }));
+  // top 5, and always include the selected dealer if it's outside the top 5
+  let contributors = ranked.slice(0,8);
+  if(!contributors.some(c=>c.self)){
+    const me = ranked.find(c=>c.self);
+    if(me) contributors = [...contributors, {...me, gap:true}];
+  }
+  renderDonut('shareDonut', {
+    value: fuelVal(d,'c'),
+    total,
+    label: lbl+' market share in '+d.tarea,
+    contributors
+  });
+  // clicking an outlet name in the list jumps to that dealer
+  document.getElementById('shareDonut').querySelectorAll('.contrib-name[data-cid]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const dd = DATA.find(x=>x.id===Number(el.dataset.cid));
+      if(dd) selectDealer(dd);
+    });
+  });
+
+  // ---- Growth leaderboard (peers by YoY growth for selected fuel) ----
+  const withGrowth = group
+    .map(x=>({x, g:fuelPct(x,false)}))
+    .filter(o=>o.g!==null && o.g!==undefined && isFinite(o.g))
+    .sort((a,b)=>b.g-a.g);
+  let lb = withGrowth;
+  if(withGrowth.length>30){
+    const idx = withGrowth.findIndex(o=>o.x.id===d.id);
+    const start = idx<0 ? 0 : Math.max(0, Math.min(idx-10, withGrowth.length-30));
+    lb = withGrowth.slice(start, start+30);
+  }
+  renderGrowthChart('growthChart', {
+    labels: lb.map(o=>o.x.name),
+    values: lb.map(o=>o.g),
+    selfIdx: lb.findIndex(o=>o.x.id===d.id),
+    title: lbl+' YoY growth % by dealer (green = growth, red = decline, ★ = selected)'
+  });
+
+  // ---- Fuel mix (MS vs HSD) — sorted by combined total, cap 30, keep selected ----
+  const mixSorted = [...group].sort((a,b)=>((b.msC||0)+(b.hsdC||0))-((a.msC||0)+(a.hsdC||0)));
+  let mix = mixSorted;
+  if(mixSorted.length>30){
+    const idx = mixSorted.findIndex(x=>x.id===d.id);
+    const start = Math.max(0, Math.min(idx-10, mixSorted.length-30));
+    mix = mixSorted.slice(start, start+30);
+  }
+  renderStackedBar('mixChart', {
+    labels: mix.map(x=>x.name),
+    msVals: mix.map(x=>x.msC),
+    hsdVals: mix.map(x=>x.hsdC),
+    selfIdx: mix.findIndex(x=>x.id===d.id),
+    title: 'Fuel mix — MS vs HSD per dealer (★ = selected)'
+  });
 }
 
 function drawPeerTable(group){
@@ -415,29 +723,26 @@ function drawSubGroup(group){
   });
   const keys = Object.keys(groups).sort();
   const myKey = d[subGroupField] || 'Unclassified';
+  const lbl = fuelLabel();
   function avg(arr){ return arr.length? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+  // avg per outlet for the selected fuel
+  const fuelAvg = k => {
+    if(fuelType==='ms')  return avg(groups[k].msArr);
+    if(fuelType==='hsd') return avg(groups[k].hsdArr);
+    return avg(groups[k].msArr) + avg(groups[k].hsdArr); // MS+HSD combined avg
+  };
 
   el.innerHTML = `
-    <div class="two-col">
-      <div class="chart-wrap"><div id="subChartMS"></div></div>
-      <div class="chart-wrap"><div id="subChartHSD"></div></div>
-    </div>
+    <div class="chart-wrap"><div id="subChartFuel"></div></div>
     <div class="table-scroll"><table class="dtable" id="subTable"></table></div>
   `;
 
-  renderBarChart('subChartMS', {
+  renderBarChart('subChartFuel', {
     labels: keys,
-    values: keys.map(k=>avg(groups[k].msArr)),
+    values: keys.map(k=>fuelAvg(k)),
     colors: keys.map(k=>k===myKey?'#E31E24':'#0054A6'),
-    unitLabel: 'Avg MS / outlet (KL)',
-    title: 'Avg MS per outlet by '+label2(subGroupField)+' — within this trading area'
-  });
-  renderBarChart('subChartHSD', {
-    labels: keys,
-    values: keys.map(k=>avg(groups[k].hsdArr)),
-    colors: keys.map(k=>k===myKey?'#E31E24':'#E31E24'),
-    unitLabel: 'Avg HSD / outlet (KL)',
-    title: 'Avg HSD per outlet by '+label2(subGroupField)+' — within this trading area'
+    unitLabel: 'Avg '+lbl+' / outlet (KL)',
+    title: 'Avg '+lbl+' per outlet by '+label2(subGroupField)+' — within this trading area (red = selected dealer’s group)'
   });
 
   const thead = `<thead><tr><th>${label2(subGroupField)}</th><th>Outlets</th><th>Total MS (KL)</th><th>Avg MS (KL)</th><th>Total HSD (KL)</th><th>Avg HSD (KL)</th></tr></thead>`;
