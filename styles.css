@@ -265,8 +265,17 @@
     padding-top:12px;
   }
 
+  /* Grid/flex items default to min-width:auto, so wide charts and the peer
+     table would push the panel past the screen edge (content clipped off to
+     the right with no scroll). Letting these tracks shrink to 0 keeps the
+     layout inside the viewport; the inner .svg-chart-scroll / .table-scroll
+     wrappers then provide horizontal scrolling for the wide content. */
+  .app-grid > *,
+  .two-col > *{min-width:0;}
+
   /* ===== Main panel ===== */
   .panel{
+    min-width:0;
     background:var(--surface);
     border-radius:var(--radius);
     border:1px solid var(--line);
@@ -352,7 +361,7 @@
   }
   .chart-wrap.h280{height:300px;}
   .chart-title{font-family:'Space Grotesk',sans-serif;font-size:13px;color:var(--ink);margin-bottom:10px;}
-  .svg-chart-scroll{overflow-x:auto;padding-bottom:4px;}
+  .svg-chart-scroll{overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;}
   .svg-chart-scroll svg{display:block;}
   .bar-value-label{font-family:'IBM Plex Mono',monospace;font-size:10px;fill:var(--ink-soft);}
   .bar-axis-label{font-family:'IBM Plex Mono',monospace;font-size:10px;fill:var(--ink-faint);}
@@ -421,7 +430,7 @@
   .num{font-family:'IBM Plex Mono',monospace;text-align:right;}
   .pos{color:var(--pos);}
   .neg{color:var(--neg);}
-  .table-scroll{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;}
+  .table-scroll{max-height:420px;overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:8px;}
   .table-scroll table.dtable thead th{position:sticky;top:0;background:var(--surface);}
 
   .pill-small{
