@@ -510,8 +510,6 @@ function renderPeerSection(){
     </div>
 
     <div class="chart-wrap"><div id="peerChartVol"></div></div>
-
-    <div class="chart-wrap"><div id="peerChartVol"></div></div>
     <div class="chart-wrap"><div id="growthChart"></div></div>
     <div class="chart-wrap"><div id="mixChart"></div></div>
 
@@ -861,6 +859,7 @@ function drawIndustryMarketShare(group){
 
     </div>
 
+    <div class="table-scroll">
     <table class="dtable">
 
         <thead>
@@ -931,7 +930,7 @@ function drawIndustryMarketShare(group){
 
             <td class="num">${fmt(industryHist)}</td>
 
-            <td class="num">${fmtPct(((industryCur-industryHist)/industryHist)*100)}</td>
+            <td class="num">${fmtPct(industryHist===0?null:((industryCur-industryHist)/industryHist)*100)}</td>
 
             <td class="num">100%</td>
 
@@ -948,6 +947,7 @@ function drawIndustryMarketShare(group){
         </tbody>
 
     </table>
+    </div>
 
     `;
 
