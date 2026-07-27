@@ -505,6 +505,10 @@ function renderPeerSection(){
       <div id="historicalPanel"></div>
     </div>
 
+    <div class="chart-wrap">
+        <div id="industryMarketShare"></div>
+    </div>
+
     <div class="chart-wrap"><div id="peerChartVol"></div></div>
     <div class="chart-wrap"><div id="growthChart"></div></div>
     <div class="chart-wrap"><div id="mixChart"></div></div>
@@ -537,9 +541,15 @@ function renderPeerSection(){
   });
 
   renderHistorical(d);
+
+  drawIndustryMarketShare(group);
+
   drawPeerStatsAndCharts(group);
+
   drawAnalyticsCharts(group);
+
   drawPeerTable(group);
+
   drawSubGroup(group);
 }
 
@@ -751,4 +761,208 @@ function drawSubGroup(group){
     return `<tr class="${k===myKey?'self-row':''}"><td>${esc(k)}</td><td class="num">${g.n}</td><td class="num">${fmt(g.ms)}</td><td class="num">${fmt(avg(g.msArr))}</td><td class="num">${fmt(g.hsd)}</td><td class="num">${fmt(avg(g.hsdArr))}</td></tr>`;
   }).join('');
   document.getElementById('subTable').innerHTML = thead+'<tbody>'+rows+'</tbody>';
+}
+
+function drawIndustryMarketShare(group){
+
+    const fuelMap={
+        ms:{
+            cur:"msC",
+            hist:"msH",
+            title:"MS"
+        },
+        hsd:{
+            cur:"hsdC",
+            hist:"hsdH",
+            title:"HSD"
+        },
+        both:{
+            title:"MS + HSD"
+        }
+    };
+
+    const f=fuelMap[fuelType];
+
+    const fuel =
+        fuelType === "ms" ? "MS" :
+        fuelType === "hsd" ? "HSD" :
+        "TMF";
+
+    const omcs=["HP","BP","IO"];
+
+    let industryCur=0;
+    let industryHist=0;
+
+    const rows=[];
+
+    omcs.forEach(omc=>{
+
+        const dealers=group.filter(x=>x.omc===omc);
+
+        let cur=0;
+        let hist=0;
+
+        dealers.forEach(d=>{
+
+            if(fuelType==="both"){
+
+                cur+=(d.msC||0)+(d.hsdC||0);
+
+                hist+=(d.msH||0)+(d.hsdH||0);
+
+            }
+
+            else{
+
+                cur+=(d[f.cur]||0);
+
+                hist+=(d[f.hist]||0);
+
+            }
+
+        });
+
+        industryCur+=cur;
+
+        industryHist+=hist;
+
+        rows.push({
+
+            omc:omc,
+
+            ros:dealers.length,
+
+            cur:cur,
+
+            hist:hist
+
+        });
+
+    });
+
+    rows.forEach(r=>{
+
+        r.growth=r.hist===0?null:((r.cur-r.hist)/r.hist*100);
+
+        r.curShare=industryCur===0?0:r.cur/industryCur*100;
+
+        r.histShare=industryHist===0?0:r.hist/industryHist*100;
+
+        r.gain=r.curShare-r.histShare;
+
+        r.tpoCur=r.ros? r.cur/r.ros :0;
+
+        r.tpoHist=r.ros? r.hist/r.ros :0;
+
+    });
+
+    document.getElementById("industryMarketShare").innerHTML=`
+
+    <div class="chart-title">
+
+        ${f.title} Industry Market Share Analysis
+
+    </div>
+
+    <div class="table-scroll">
+      <table class="dtable">
+
+        <thead>
+        <tr>
+            <th>OMC</th>
+            <th>ROs</th>
+            <th>Net Sh</th>
+            <th>${fuelLabel()} Vol Cur</th>
+            <th>${fuelLabel()} Vol Hist</th>
+            <th>Grwth %</th>
+            <th>Mkt Sh ${fuelLabel()} Cur %</th>
+            <th>Mkt Sh ${fuelLabel()} Hist %</th>
+            <th>${fuelLabel()} TPO Cur</th>
+            <th>${fuelLabel()} TPO Hist</th>
+        </tr>
+        </thead>
+
+        <tbody>
+
+        
+        ${rows.map(r=>`
+        <tr>
+
+            <td>${r.omc}</td>
+
+            <td class="num">${r.ros}</td>
+
+            <td class="num ${pctClass(r.gain)}">
+                ${fmtPct(r.gain)}
+            </td>
+
+            <td class="num">
+                ${fmt(r.cur)}
+            </td>
+
+            <td class="num">
+                ${fmt(r.hist)}
+            </td>
+
+            <td class="num ${pctClass(r.growth)}">
+                ${fmtPct(r.growth)}
+            </td>
+
+            <td class="num">
+                ${r.curShare.toFixed(1)}%
+            </td>
+
+            <td class="num">
+                ${r.histShare.toFixed(1)}%
+            </td>
+
+            <td class="num">
+                ${fmt(r.tpoCur)}
+            </td>
+
+            <td class="num">
+                ${fmt(r.tpoHist)}
+            </td>
+
+        </tr>
+
+        `).join("")}
+
+        <tr class="self-row">
+
+          <td><b>Industry</b></td>
+
+          <td class="num">${group.length}</td>
+
+          <td class="num">0%</td>
+
+          <td class="num">${fmt(industryCur)}</td>
+
+          <td class="num">${fmt(industryHist)}</td>
+
+          <td class="num ${pctClass(((industryCur-industryHist)/industryHist)*100)}">
+              ${fmtPct(((industryCur-industryHist)/industryHist)*100)}
+          </td>
+
+          <td class="num">100%</td>
+
+          <td class="num">100%</td>
+
+          <td class="num">
+              ${fmt(industryCur/group.length)}
+          </td>
+
+          <td class="num">
+              ${fmt(industryHist/group.length)}
+          </td>
+
+      </tr>
+
+        </tbody>
+
+    </table>
+  </div>
+
+    `;
+
 }
