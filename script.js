@@ -510,6 +510,8 @@ function renderPeerSection(){
     </div>
 
     <div class="chart-wrap"><div id="peerChartVol"></div></div>
+
+    <div class="chart-wrap"><div id="peerChartVol"></div></div>
     <div class="chart-wrap"><div id="growthChart"></div></div>
     <div class="chart-wrap"><div id="mixChart"></div></div>
 
@@ -783,11 +785,6 @@ function drawIndustryMarketShare(group){
 
     const f=fuelMap[fuelType];
 
-    const fuel =
-        fuelType === "ms" ? "MS" :
-        fuelType === "hsd" ? "HSD" :
-        "TMF";
-
     const omcs=["HP","BP","IO"];
 
     let industryCur=0;
@@ -864,104 +861,93 @@ function drawIndustryMarketShare(group){
 
     </div>
 
-    <div class="table-scroll">
-      <table class="dtable">
+    <table class="dtable">
 
         <thead>
-        <tr>
-            <th>OMC</th>
-            <th>ROs</th>
-            <th>Net Sh</th>
-            <th>${fuelLabel()} Vol Cur</th>
-            <th>${fuelLabel()} Vol Hist</th>
-            <th>Grwth %</th>
-            <th>Mkt Sh ${fuelLabel()} Cur %</th>
-            <th>Mkt Sh ${fuelLabel()} Hist %</th>
-            <th>${fuelLabel()} TPO Cur</th>
-            <th>${fuelLabel()} TPO Hist</th>
-        </tr>
+
+            <tr>
+
+                <th>OMC</th>
+
+                <th>ROs</th>
+
+                <th>Current Vol</th>
+
+                <th>Historical Vol</th>
+
+                <th>Growth %</th>
+
+                <th>Current Share</th>
+
+                <th>Historical Share</th>
+
+                <th>Gain/Loss</th>
+
+                <th>TPO Cur</th>
+
+                <th>TPO Hist</th>
+
+            </tr>
+
         </thead>
 
         <tbody>
 
-        
         ${rows.map(r=>`
-        <tr>
 
-            <td>${r.omc}</td>
+            <tr>
 
-            <td class="num">${r.ros}</td>
+                <td>${r.omc}</td>
 
-            <td class="num ${pctClass(r.gain)}">
-                ${fmtPct(r.gain)}
-            </td>
+                <td class="num">${r.ros}</td>
 
-            <td class="num">
-                ${fmt(r.cur)}
-            </td>
+                <td class="num">${fmt(r.cur)}</td>
 
-            <td class="num">
-                ${fmt(r.hist)}
-            </td>
+                <td class="num">${fmt(r.hist)}</td>
 
-            <td class="num ${pctClass(r.growth)}">
-                ${fmtPct(r.growth)}
-            </td>
+                <td class="num ${pctClass(r.growth)}">${fmtPct(r.growth)}</td>
 
-            <td class="num">
-                ${r.curShare.toFixed(1)}%
-            </td>
+                <td class="num">${r.curShare.toFixed(1)}%</td>
 
-            <td class="num">
-                ${r.histShare.toFixed(1)}%
-            </td>
+                <td class="num">${r.histShare.toFixed(1)}%</td>
 
-            <td class="num">
-                ${fmt(r.tpoCur)}
-            </td>
+                <td class="num ${pctClass(r.gain)}">${fmtPct(r.gain)}</td>
 
-            <td class="num">
-                ${fmt(r.tpoHist)}
-            </td>
+                <td class="num">${fmt(r.tpoCur)}</td>
 
-        </tr>
+                <td class="num">${fmt(r.tpoHist)}</td>
+
+            </tr>
 
         `).join("")}
 
         <tr class="self-row">
 
-          <td><b>Industry</b></td>
+            <td><b>Industry</b></td>
 
-          <td class="num">${group.length}</td>
+            <td class="num">${group.length}</td>
 
-          <td class="num">0%</td>
+            <td class="num">${fmt(industryCur)}</td>
 
-          <td class="num">${fmt(industryCur)}</td>
+            <td class="num">${fmt(industryHist)}</td>
 
-          <td class="num">${fmt(industryHist)}</td>
+            <td class="num">${fmtPct(((industryCur-industryHist)/industryHist)*100)}</td>
 
-          <td class="num ${pctClass(((industryCur-industryHist)/industryHist)*100)}">
-              ${fmtPct(((industryCur-industryHist)/industryHist)*100)}
-          </td>
+            <td class="num">100%</td>
 
-          <td class="num">100%</td>
+            <td class="num">100%</td>
 
-          <td class="num">100%</td>
+            <td class="num">0%</td>
 
-          <td class="num">
-              ${fmt(industryCur/group.length)}
-          </td>
+            <td class="num">${fmt(industryCur/group.length)}</td>
 
-          <td class="num">
-              ${fmt(industryHist/group.length)}
-          </td>
+            <td class="num">${fmt(industryHist/group.length)}</td>
 
-      </tr>
+        </tr>
 
         </tbody>
 
     </table>
-  </div>
 
     `;
 
